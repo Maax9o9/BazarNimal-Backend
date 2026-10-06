@@ -1,0 +1,16 @@
+# Dependencias directas. requirements.txt tiene las versiones exactas (pip freeze).
+fastapi[standard]
+sqlalchemy[asyncio]
+aiomysql
+pymysql
+alembic
+pydantic-settings
+argon2-cffi
+cryptography
+pyjwt
+pillow
+
+# Pruebas
+pytest
+pytest-asyncio
+aiosqlite
