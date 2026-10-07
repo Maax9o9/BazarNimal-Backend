@@ -54,3 +54,9 @@ def test_uploaded_images_are_served_without_script_execution(admin_client, make_
     assert image.headers["content-type"] == "image/webp"
     assert "sandbox" in image.headers["Content-Security-Policy"]
     assert make_client().get("/uploads/images/../../core/config/settings.py").status_code == 404
+
+
+def test_health_checks_database(make_client):
+    r = make_client().get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok", "database": "ok"}

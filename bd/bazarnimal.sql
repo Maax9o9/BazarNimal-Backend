@@ -1,8 +1,10 @@
 -- =============================================================================
 --  BazarNimal - Base de datos MySQL 8
 -- =============================================================================
---  Ejecutar UNA sola vez con un usuario administrador de MySQL (root), usando
---  el script scripts/setup_database.ps1 desde la carpeta Backend.
+--  Ejecutar UNA sola vez con un usuario administrador de MySQL usando el
+--  script scripts/setup_database.ps1 desde la carpeta Backend:
+--    - Local: con root.
+--    - Aiven (producción): con avnadmin y la opción -Remote (ver DEPLOY.md).
 --
 --  IMPORTANTE: no escribas barras invertidas en este archivo (ni en comentarios):
 --  el cliente mysql las interpreta como comandos.
@@ -47,26 +49,33 @@ DROP PROCEDURE bazarnimal.check_setup_passwords;
 
 -- -----------------------------------------------------------------------------
 -- 2. Usuarios con privilegios mínimos
+--    Local: solo aceptan conexiones desde esta máquina (localhost y 127.0.0.1).
+--    Remoto (Aiven): @remote = 1 los crea con host '%' porque el backend se
+--    conecta desde otro servidor; la conexión va cifrada con TLS.
 -- -----------------------------------------------------------------------------
+SET @host_a = IF(@remote = 1, '%', 'localhost');
+SET @host_b = IF(@remote = 1, '%', '127.0.0.1');
 
 -- Usuario de la aplicación: solo lee, inserta y actualiza (los borrados son lógicos).
 -- Sin DROP, sin ALTER, sin GRANT y sin acceso a otras bases.
-SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_app`@`localhost` IDENTIFIED BY ', QUOTE(@app_password));
+SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_app`@', QUOTE(@host_a), ' IDENTIFIED BY ', QUOTE(@app_password));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_app`@`127.0.0.1` IDENTIFIED BY ', QUOTE(@app_password));
+SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_app`@', QUOTE(@host_b), ' IDENTIFIED BY ', QUOTE(@app_password));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-GRANT SELECT, INSERT, UPDATE ON bazarnimal.* TO 'bazarnimal_app'@'localhost';
-GRANT SELECT, INSERT, UPDATE ON bazarnimal.* TO 'bazarnimal_app'@'127.0.0.1';
+SET @sql = CONCAT('GRANT SELECT, INSERT, UPDATE ON bazarnimal.* TO `bazarnimal_app`@', QUOTE(@host_a));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @sql = CONCAT('GRANT SELECT, INSERT, UPDATE ON bazarnimal.* TO `bazarnimal_app`@', QUOTE(@host_b));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Usuario de migraciones: puede crear y modificar tablas, solo en esta base.
-SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_migrator`@`localhost` IDENTIFIED BY ', QUOTE(@migrator_password));
+SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_migrator`@', QUOTE(@host_a), ' IDENTIFIED BY ', QUOTE(@migrator_password));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_migrator`@`127.0.0.1` IDENTIFIED BY ', QUOTE(@migrator_password));
+SET @sql = CONCAT('CREATE USER IF NOT EXISTS `bazarnimal_migrator`@', QUOTE(@host_b), ' IDENTIFIED BY ', QUOTE(@migrator_password));
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-GRANT ALL PRIVILEGES ON bazarnimal.* TO 'bazarnimal_migrator'@'localhost';
-GRANT ALL PRIVILEGES ON bazarnimal.* TO 'bazarnimal_migrator'@'127.0.0.1';
-
-FLUSH PRIVILEGES;
+SET @sql = CONCAT('GRANT ALL PRIVILEGES ON bazarnimal.* TO `bazarnimal_migrator`@', QUOTE(@host_a));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @sql = CONCAT('GRANT ALL PRIVILEGES ON bazarnimal.* TO `bazarnimal_migrator`@', QUOTE(@host_b));
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @app_password = NULL;
 SET @migrator_password = NULL;

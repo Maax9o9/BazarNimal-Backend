@@ -149,13 +149,27 @@ class RequestLoggingMiddleware:
 
 
 class GlobalRateLimitMiddleware:
-    """Límite global por IP. Si una ruta tiene su propio límite, sus headers tienen prioridad."""
+    """Límite general por IP, con contadores separados para lectura y escritura.
 
-    def __init__(self, app: ASGIApp, *, store: IRateLimitStore, limit: int, window_seconds: int) -> None:
+    Leer (GET/HEAD) es barato y una página hace varias peticiones al cargar, así que tiene un
+    límite más amplio. Escribir (POST/PUT/PATCH/DELETE) es donde está el riesgo de abuso.
+    Si una ruta tiene su propio límite (login, registro, imágenes), sus headers tienen prioridad.
+    """
+
+    _READ_METHODS = {"GET", "HEAD"}
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        store: IRateLimitStore,
+        read_policy: tuple[int, int],
+        write_policy: tuple[int, int],
+    ) -> None:
         self.app = app
         self.store = store
-        self.limit = limit
-        self.window_seconds = window_seconds
+        self.read_policy = read_policy
+        self.write_policy = write_policy
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -170,10 +184,14 @@ class GlobalRateLimitMiddleware:
             return
 
         ip = _client_ip(scope)
-        result = await self.store.hit(f"global:{ip}", self.limit, self.window_seconds)
+        policy = "read" if scope["method"] in self._READ_METHODS else "write"
+        limit, window_seconds = self.read_policy if policy == "read" else self.write_policy
+        result = await self.store.hit(f"global-{policy}:{ip}", limit, window_seconds)
         headers = rate_limit_headers(result)
         if not result.allowed:
-            security_logger.warning("rate_limit_exceeded", extra={"policy": "global", "ip": ip, "path": path})
+            security_logger.warning(
+                "rate_limit_exceeded", extra={"policy": f"global-{policy}", "ip": ip, "path": path}
+            )
             await _send_json(send, 429, _error("Demasiadas peticiones, intenta más tarde"), headers)
             return
 

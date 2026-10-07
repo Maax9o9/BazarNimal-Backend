@@ -12,7 +12,7 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import EmailStr, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.shared.validators.common import check_password_policy
@@ -39,6 +39,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         env_ignore_empty=True,  # VAR= vacío cuenta como no definido (los obligatorios fallan)
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Aplicación
@@ -51,7 +52,8 @@ class Settings(BaseSettings):
 
     # Servidor (python src/main.py)
     app_host: str = "127.0.0.1"
-    app_port: int = Field(default=8000, ge=1, le=65535)
+    # Render (y otros PaaS) asignan el puerto en la variable PORT.
+    app_port: int = Field(default=8000, ge=1, le=65535, validation_alias=AliasChoices("APP_PORT", "PORT"))
     app_reload: bool = False
     # IPs de proxies confiables para leer X-Forwarded-For (IP real del cliente).
     forwarded_allow_ips: str = "127.0.0.1"
@@ -64,6 +66,7 @@ class Settings(BaseSettings):
     db_password: SecretStr
     db_migration_user: str
     db_migration_password: SecretStr
+    # Ruta al certificado CA de MySQL para conectar por TLS (Aiven lo exige).
     db_ssl_ca: str | None = None
     db_pool_size: int = Field(default=10, ge=1, le=100)
     # Solo para pruebas automatizadas (por ejemplo, SQLite). Prohibido fuera de app_env=test.
@@ -93,8 +96,11 @@ class Settings(BaseSettings):
     login_lock_minutes: int = Field(default=15, ge=1)
 
     # Rate limit (peticiones, ventana en segundos)
-    rate_limit_global: int = 100
-    rate_limit_global_window_seconds: int = 900
+    # Límite general por IP, separado en lectura (GET/HEAD) y escritura (POST/PUT/PATCH/DELETE).
+    rate_limit_read: int = Field(default=600, ge=1)
+    rate_limit_read_window_seconds: int = Field(default=900, ge=1)
+    rate_limit_write: int = Field(default=100, ge=1)
+    rate_limit_write_window_seconds: int = Field(default=900, ge=1)
     rate_limit_login: int = 5
     rate_limit_login_window_seconds: int = 900
     rate_limit_register: int = 5
@@ -106,6 +112,15 @@ class Settings(BaseSettings):
     max_json_body_kb: int = Field(default=100, ge=1, le=1024)
     max_image_size_mb: int = Field(default=5, ge=1, le=20)
     uploads_dir: Path = SRC_DIR / "uploads"
+
+    # Almacenamiento de imágenes: "local" (disco) o "s3" (Cloudflare R2 u otro compatible con S3).
+    storage_driver: Literal["local", "s3"] = "local"
+    s3_endpoint_url: str | None = None  # R2: https://<account_id>.r2.cloudflarestorage.com
+    s3_region: str = "auto"
+    s3_bucket: str | None = None
+    s3_access_key_id: SecretStr | None = None
+    s3_secret_access_key: SecretStr | None = None
+    s3_public_base_url: str | None = None  # URL pública del bucket (r2.dev o dominio propio)
 
     # Administrador inicial (seeder)
     admin_name: str | None = None
@@ -160,6 +175,19 @@ class Settings(BaseSettings):
             raise ValueError("COOKIE_SAMESITE=none requiere COOKIE_SECURE=true")
         if self.db_url_override and self.app_env != "test":
             raise ValueError("DB_URL_OVERRIDE solo se permite con APP_ENV=test")
+        if self.db_ssl_ca and not Path(self.db_ssl_ca).is_file():
+            raise ValueError(f"DB_SSL_CA no existe: {self.db_ssl_ca}")
+        if self.storage_driver == "s3":
+            required = {
+                "S3_ENDPOINT_URL": self.s3_endpoint_url,
+                "S3_BUCKET": self.s3_bucket,
+                "S3_ACCESS_KEY_ID": self.s3_access_key_id,
+                "S3_SECRET_ACCESS_KEY": self.s3_secret_access_key,
+                "S3_PUBLIC_BASE_URL": self.s3_public_base_url,
+            }
+            missing = [name for name, value in required.items() if not value]
+            if missing:
+                raise ValueError(f"STORAGE_DRIVER=s3 requiere: {', '.join(missing)}")
         if self.is_production:
             if not self.cookie_secure:
                 raise ValueError("En producción COOKIE_SECURE debe ser true")
@@ -171,6 +199,8 @@ class Settings(BaseSettings):
                 raise ValueError("En producción con MySQL remoto se requiere DB_SSL_CA (TLS)")
             if self.app_reload:
                 raise ValueError("APP_RELOAD no se permite en producción")
+            if self.storage_driver == "s3" and not (self.s3_public_base_url or "").startswith("https://"):
+                raise ValueError("En producción S3_PUBLIC_BASE_URL debe usar https://")
         return self
 
     @cached_property
@@ -216,7 +246,8 @@ class Settings(BaseSettings):
 
     def rate_limit_policy(self, name: str) -> tuple[int, int]:
         policies = {
-            "global": (self.rate_limit_global, self.rate_limit_global_window_seconds),
+            "read": (self.rate_limit_read, self.rate_limit_read_window_seconds),
+            "write": (self.rate_limit_write, self.rate_limit_write_window_seconds),
             "login": (self.rate_limit_login, self.rate_limit_login_window_seconds),
             "register": (self.rate_limit_register, self.rate_limit_register_window_seconds),
             "upload": (self.rate_limit_upload, self.rate_limit_upload_window_seconds),

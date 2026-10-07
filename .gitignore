@@ -7,3 +7,7 @@ __pycache__/
 
 src/uploads/images/*
 !src/uploads/images/.gitkeep
+
+# Variables de producción y certificados (nunca al repositorio)
+.env.*
+*.pem

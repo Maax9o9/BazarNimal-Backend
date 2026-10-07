@@ -1,0 +1,101 @@
+# Blueprint de Render para el backend de BazarNimal (plan gratis).
+# Render -> New -> Blueprint -> elige este repositorio. Los valores con `sync: false` los pide
+# Render al crear el servicio (son secretos o dependen de tus cuentas). Guía completa: DEPLOY.md
+services:
+  - type: web
+    name: bazarnimal-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python src/main.py
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+
+      # --- Aplicación ---
+      - key: APP_ENV
+        value: production
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: APP_RELOAD
+        value: "false"
+      # El proxy de Render está delante del backend; sin esto todos los clientes tendrían la misma IP.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      - key: LOG_LEVEL
+        value: INFO
+      # URL pública del backend, por ejemplo https://bazarnimal-api.onrender.com
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # URL del frontend en Vercel, por ejemplo https://bazarnimal.vercel.app
+      - key: CORS_ORIGINS
+        sync: false
+      # "true" para tener Swagger en producción (por ejemplo, para una demo)
+      - key: DOCS_ENABLED
+        value: "false"
+
+      # --- MySQL en Aiven (sección "Connection information" de la consola de Aiven) ---
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        value: bazarnimal
+      - key: DB_USER
+        value: bazarnimal_app
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_MIGRATION_USER
+        value: bazarnimal_migrator
+      - key: DB_MIGRATION_PASSWORD
+        sync: false
+      # Certificado CA de Aiven subido como Secret File con el nombre aiven-ca.pem
+      - key: DB_SSL_CA
+        value: /etc/secrets/aiven-ca.pem
+      - key: DB_POOL_SIZE
+        value: "5"
+
+      # --- Seguridad ---
+      # Si se pierde, solo se cierran las sesiones: Render puede generarlo.
+      - key: JWT_SECRET
+        generateValue: true
+      # ENCRYPTION_KEYS y HMAC_KEY NO se generan aquí: si se pierden, los correos y teléfonos
+      # guardados ya no se pueden leer. Genéralos con scripts/generate_secrets.py y respáldalos.
+      - key: ENCRYPTION_KEYS
+        sync: false
+      - key: ENCRYPTION_ACTIVE_KEY_VERSION
+        value: "1"
+      - key: HMAC_KEY
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: strict
+
+      # --- Imágenes en Cloudflare R2 ---
+      - key: STORAGE_DRIVER
+        value: s3
+      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      # URL pública del bucket: https://pub-xxxx.r2.dev (o un dominio propio)
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+
+      # --- Administrador inicial ---
+      - key: ADMIN_NAME
+        value: Administrador
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

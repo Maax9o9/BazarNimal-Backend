@@ -10,6 +10,7 @@ from src.core.security.cookies import CookieManager
 from src.core.security.jwt_token_service import JwtTokenService
 from src.core.security.rate_limit import IRateLimitStore
 from src.core.storage.local_image_storage import LocalImageStorage
+from src.core.storage.s3_image_storage import S3ImageStorage
 from src.shared.contracts.field_cipher import IFieldCipher
 from src.shared.contracts.image_storage import IImageStorage
 from src.shared.contracts.password_hasher import IPasswordHasher
@@ -36,5 +37,6 @@ def register_core(
     container.register(IPasswordHasher, Argon2PasswordHasher, lifetime=Lifetime.SINGLETON)
     container.register(ITokenService, JwtTokenService, lifetime=Lifetime.SINGLETON)
     container.register(IFieldCipher, AesGcmFieldCipher, lifetime=Lifetime.SINGLETON)
-    container.register(IImageStorage, LocalImageStorage, lifetime=Lifetime.SINGLETON)
+    image_storage = S3ImageStorage if settings.storage_driver == "s3" else LocalImageStorage
+    container.register(IImageStorage, image_storage, lifetime=Lifetime.SINGLETON)
     container.register(CookieManager, lifetime=Lifetime.SINGLETON)

@@ -1,4 +1,5 @@
-# Dependencias directas. requirements.txt tiene las versiones exactas (pip freeze).
+# Dependencias directas de producción. requirements.txt tiene las versiones exactas.
+# Las de pruebas están en requirements-dev.txt.
 fastapi[standard]
 sqlalchemy[asyncio]
 aiomysql
@@ -9,8 +10,4 @@ argon2-cffi
 cryptography
 pyjwt
 pillow
-
-# Pruebas
-pytest
-pytest-asyncio
-aiosqlite
+boto3

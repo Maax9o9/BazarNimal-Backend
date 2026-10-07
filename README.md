@@ -112,16 +112,17 @@ El proyecto **no usa archivos `__init__.py`** (paquetes de espacio de nombres de
 | JWT | PyJWT, HS256 fijo (se rechaza `alg: none`), solo en cookies HttpOnly |
 | Contraseñas | Argon2id (argon2-cffi), con bloqueo temporal tras 5 intentos |
 | Datos personales | AES-256-GCM con versión de llave + HMAC-SHA256 para buscar por correo |
-| Rate limit | Middleware propio: 429 + `Retry-After` + `RateLimit-*` (en memoria; Redis si hay varias instancias) |
+| Rate limit | Middleware propio: 429 + `Retry-After` + `RateLimit-*` (en memoria; Redis si hay varias instancias). Límite general separado en lectura (`RATE_LIMIT_READ`, 600/15 min) y escritura (`RATE_LIMIT_WRITE`, 100/15 min), más límites propios para login, registro y subida de imágenes |
 | Helmet / CORS | Middleware de cabeceras de seguridad propio + `CORSMiddleware` restringido |
 | multer + sharp | `UploadFile` + magic bytes + Pillow (recodifica a WEBP, sin EXIF), nombre UUID |
 | Logs (pino) | JSON estructurado con campos sensibles ocultos |
 
 ## Pruebas
 
-No necesitan MySQL: las e2e levantan la app completa (con migraciones) sobre SQLite temporal.
+No necesitan MySQL: las e2e levantan la app completa (con migraciones) sobre SQLite temporal. Requieren las dependencias de desarrollo:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest
 ```
 
@@ -137,6 +138,10 @@ El backend la aplica sola al arrancar.
 
 ## Producción
 
+La guía paso a paso para desplegar gratis (Render + Aiven + Cloudflare R2, con el frontend en Vercel) está en [DEPLOY.md](DEPLOY.md). El servicio de Render se define en [render.yaml](render.yaml).
+
+- Imágenes: con `STORAGE_DRIVER=s3` se guardan en Cloudflare R2 (o cualquier servicio compatible con S3) en lugar del disco.
+- `/health` también comprueba la conexión a MySQL (responde 503 si no hay conexión).
 - `APP_ENV=production`, HTTPS obligatorio (activa HSTS), `COOKIE_SECURE=true`.
 - `PUBLIC_BASE_URL` y `CORS_ORIGINS` deben ser `https://` (el backend lo valida).
 - Detrás de un proxy, pon su IP en `FORWARDED_ALLOW_IPS` para obtener la IP real del cliente.

@@ -1,10 +1,14 @@
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from src.core.config.settings import Settings, get_settings
 from src.core.database.connection import create_engine, create_session_factory
@@ -31,6 +35,7 @@ from src.shared.contracts.password_hasher import IPasswordHasher
 logger = get_logger("server")
 
 MULTIPART_OVERHEAD = 64 * 1024
+HEALTH_DB_TIMEOUT_SECONDS = 3
 
 API_DESCRIPTION = """
 API de BazarNimal, tienda de mascotas.
@@ -64,7 +69,12 @@ def create_app(settings: Settings | None = None, *, run_startup_migrations: bool
         app.state.container = container
 
         await seed_admin(engine, settings, container.resolve(IPasswordHasher), container.resolve(IFieldCipher))
-        logger.info("server_started", extra={"env": settings.app_env})
+        if settings.is_production and settings.storage_driver == "local":
+            logger.warning(
+                "local_image_storage_in_production",
+                extra={"hint": "Si el disco del servidor es temporal (Render gratis), usa STORAGE_DRIVER=s3"},
+            )
+        logger.info("server_started", extra={"env": settings.app_env, "storage": settings.storage_driver})
         try:
             yield
         finally:
@@ -97,8 +107,8 @@ def create_app(settings: Settings | None = None, *, run_startup_migrations: bool
     app.add_middleware(
         GlobalRateLimitMiddleware,
         store=rate_limit_store,
-        limit=settings.rate_limit_global,
-        window_seconds=settings.rate_limit_global_window_seconds,
+        read_policy=settings.rate_limit_policy("read"),
+        write_policy=settings.rate_limit_policy("write"),
     )
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_production)
@@ -106,12 +116,26 @@ def create_app(settings: Settings | None = None, *, run_startup_migrations: bool
 
     app.include_router(build_api_router())
 
-    images_dir = settings.uploads_dir / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/uploads/images", StaticFiles(directory=images_dir, html=False), name="uploads")
+    if settings.storage_driver == "local":
+        images_dir = settings.uploads_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        app.mount("/uploads/images", StaticFiles(directory=images_dir, html=False), name="uploads")
 
-    @app.get("/health", tags=["Health"], summary="Estado del servicio")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    @app.get(
+        "/health",
+        tags=["Health"],
+        summary="Estado del servicio y de la conexión a la base de datos",
+        responses={503: {"description": "La base de datos no responde"}},
+    )
+    async def health(request: Request) -> JSONResponse:
+        engine: AsyncEngine = request.app.state.container.resolve(AsyncEngine)
+        try:
+            async with asyncio.timeout(HEALTH_DB_TIMEOUT_SECONDS):
+                async with engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
+        except Exception:
+            logger.warning("health_database_unavailable")
+            return JSONResponse(status_code=503, content={"status": "error", "database": "unavailable"})
+        return JSONResponse(content={"status": "ok", "database": "ok"})
 
     return app

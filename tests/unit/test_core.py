@@ -179,3 +179,32 @@ def test_detect_image_mime_uses_magic_bytes():
 
 def test_like_pattern_escapes_wildcards():
     assert like_pattern("100%_off!") == "%100!%!_off!!%"
+
+
+def test_render_like_production_config(tmp_path, monkeypatch):
+    ca = tmp_path / "aiven-ca.pem"
+    ca.write_text("certificado de prueba")
+    monkeypatch.delenv("APP_PORT", raising=False)
+    monkeypatch.setenv("PORT", "10000")  # Render asigna el puerto en PORT
+    settings = _settings(
+        app_env="production",
+        db_url_override=None,
+        docs_enabled=None,
+        app_host="0.0.0.0",
+        cookie_secure=True,
+        forwarded_allow_ips="*",
+        public_base_url="https://bazarnimal-api.onrender.com",
+        cors_origins="https://bazarnimal.vercel.app",
+        db_host="mysql-bazarnimal.aivencloud.com",
+        db_ssl_ca=str(ca),
+        storage_driver="s3",
+        s3_endpoint_url="https://account123.r2.cloudflarestorage.com",
+        s3_bucket="bazarnimal-images",
+        s3_access_key_id="key",
+        s3_secret_access_key="secret",
+        s3_public_base_url="https://pub-123.r2.dev",
+    )
+    assert settings.app_port == 10000
+    assert settings.docs_are_enabled is False
+    with pytest.raises(ValueError, match="DB_SSL_CA no existe"):
+        _settings(db_ssl_ca=str(tmp_path / "no-existe.pem"))
