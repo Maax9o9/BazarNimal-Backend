@@ -11,3 +11,8 @@ src/uploads/images/*
 # Variables de producción y certificados (nunca al repositorio)
 .env.*
 *.pem
+
+# Documentación local y archivos de Claude (no se suben al repositorio)
+*.md
+.claude/
+.claude-*
