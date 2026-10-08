@@ -51,9 +51,10 @@ services:
         value: bazarnimal_migrator
       - key: DB_MIGRATION_PASSWORD
         sync: false
-      # Certificado CA de Aiven subido como Secret File con el nombre aiven-ca.pem
-      - key: DB_SSL_CA
-        value: /etc/secrets/aiven-ca.pem
+      # Certificado CA de Aiven: pega el contenido completo de ca.pem
+      # (desde -----BEGIN CERTIFICATE----- hasta -----END CERTIFICATE-----).
+      - key: DB_SSL_CA_PEM
+        sync: false
       - key: DB_POOL_SIZE
         value: "5"
 

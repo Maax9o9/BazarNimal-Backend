@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     db_migration_password: SecretStr
     # Ruta al certificado CA de MySQL para conectar por TLS (Aiven lo exige).
     db_ssl_ca: str | None = None
+    # Alternativa sin archivo: el contenido del certificado CA (-----BEGIN CERTIFICATE----- ...).
+    # Si está definido, tiene prioridad sobre DB_SSL_CA.
+    db_ssl_ca_pem: str | None = None
     db_pool_size: int = Field(default=10, ge=1, le=100)
     # Solo para pruebas automatizadas (por ejemplo, SQLite). Prohibido fuera de app_env=test.
     db_url_override: str | None = None
@@ -155,6 +158,14 @@ class Settings(BaseSettings):
             check_password_policy(value.get_secret_value())
         return value
 
+    @field_validator("db_ssl_ca_pem")
+    @classmethod
+    def _normalize_pem(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        # Algunos paneles guardan los saltos de línea como el texto "\n" (barra + n).
+        return value.replace("\\n", "\n").strip() + "\n"
+
     @field_validator("cors_origins")
     @classmethod
     def _valid_origins(cls, value: str) -> str:
@@ -178,8 +189,11 @@ class Settings(BaseSettings):
             raise ValueError("COOKIE_SAMESITE=none requiere COOKIE_SECURE=true")
         if self.db_url_override and self.app_env != "test":
             raise ValueError("DB_URL_OVERRIDE solo se permite con APP_ENV=test")
-        if self.db_ssl_ca and not Path(self.db_ssl_ca).is_file():
-            raise ValueError(f"DB_SSL_CA no existe: {self.db_ssl_ca}")
+        if self.db_ssl_ca_pem:
+            if "-----BEGIN CERTIFICATE-----" not in self.db_ssl_ca_pem:
+                raise ValueError("DB_SSL_CA_PEM no contiene un certificado (falta -----BEGIN CERTIFICATE-----)")
+        elif self.db_ssl_ca and not Path(self.db_ssl_ca).is_file():
+            raise ValueError(f"DB_SSL_CA no existe: {self.db_ssl_ca} (o define DB_SSL_CA_PEM con el certificado)")
         if self.storage_driver == "s3":
             required = {
                 "S3_ENDPOINT_URL": self.s3_endpoint_url,
@@ -198,8 +212,8 @@ class Settings(BaseSettings):
                 raise ValueError("En producción PUBLIC_BASE_URL debe usar https://")
             if any(origin.startswith("http://") for origin in self.cors_origin_list):
                 raise ValueError("En producción CORS_ORIGINS solo admite orígenes https://")
-            if self.db_host not in _LOCAL_HOSTS and not self.db_ssl_ca:
-                raise ValueError("En producción con MySQL remoto se requiere DB_SSL_CA (TLS)")
+            if self.db_host not in _LOCAL_HOSTS and not (self.db_ssl_ca or self.db_ssl_ca_pem):
+                raise ValueError("En producción con MySQL remoto se requiere DB_SSL_CA o DB_SSL_CA_PEM (TLS)")
             if self.app_reload:
                 raise ValueError("APP_RELOAD no se permite en producción")
             if self.storage_driver == "s3" and not (self.s3_public_base_url or "").startswith("https://"):

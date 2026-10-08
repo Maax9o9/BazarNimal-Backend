@@ -230,3 +230,13 @@ def test_cors_origins_trailing_slash_is_normalized():
     assert settings.cors_origin_list == ["https://bazar-nimal-frontend.vercel.app", "http://localhost:5173"]
     with pytest.raises(ValueError):
         _settings(cors_origins="https://bazar-nimal-frontend.vercel.app/app")
+
+
+def test_db_ssl_ca_pem_takes_priority_and_is_normalized(tmp_path):
+    pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----"
+    settings = _settings(db_ssl_ca="/etc/secrets/no-existe.pem", db_ssl_ca_pem=pem)
+    assert settings.db_ssl_ca_pem == pem + "\n"
+    escaped = _settings(db_ssl_ca_pem=pem.replace("\n", "\n"))  # saltos de línea guardados como texto
+    assert escaped.db_ssl_ca_pem == pem + "\n"
+    with pytest.raises(ValueError, match="DB_SSL_CA_PEM"):
+        _settings(db_ssl_ca_pem="no es un certificado")

@@ -12,6 +12,8 @@ _MYSQL_INIT_COMMAND = "SET time_zone = '+00:00'"
 
 
 def _ssl_args(settings: Settings) -> dict:
+    if settings.db_ssl_ca_pem:
+        return {"ssl": ssl.create_default_context(cadata=settings.db_ssl_ca_pem)}
     if not settings.db_ssl_ca:
         return {}
     context = ssl.create_default_context(cafile=settings.db_ssl_ca)
