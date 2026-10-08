@@ -223,3 +223,10 @@ def test_settings_errors_never_show_secret_values():
     assert "cors_origins" in message
     for secret in (secret_password, kwargs["jwt_secret"], kwargs["hmac_key"], kwargs["db_password"]):
         assert secret not in message
+
+
+def test_cors_origins_trailing_slash_is_normalized():
+    settings = _settings(cors_origins="https://bazar-nimal-frontend.vercel.app/, http://localhost:5173/")
+    assert settings.cors_origin_list == ["https://bazar-nimal-frontend.vercel.app", "http://localhost:5173"]
+    with pytest.raises(ValueError):
+        _settings(cors_origins="https://bazar-nimal-frontend.vercel.app/app")

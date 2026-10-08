@@ -158,7 +158,8 @@ class Settings(BaseSettings):
     @field_validator("cors_origins")
     @classmethod
     def _valid_origins(cls, value: str) -> str:
-        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        # El navegador envía el origen sin barra final: "https://sitio.com/" se normaliza a "https://sitio.com".
+        origins = [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
         if not origins:
             raise ValueError("define al menos un origen del frontend")
         for origin in origins:
@@ -166,7 +167,7 @@ class Settings(BaseSettings):
                 raise ValueError("no se permite '*' cuando se usan cookies")
             if not _ORIGIN_RE.match(origin):
                 raise ValueError(f"origen inválido '{origin}' (formato: http(s)://host[:puerto], sin ruta)")
-        return value
+        return ",".join(origins)
 
     @model_validator(mode="after")
     def _check_consistency(self) -> "Settings":
