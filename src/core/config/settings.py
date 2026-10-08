@@ -40,6 +40,8 @@ class Settings(BaseSettings):
         env_ignore_empty=True,  # VAR= vacío cuenta como no definido (los obligatorios fallan)
         extra="ignore",
         populate_by_name=True,
+        # Los errores de validación nunca muestran los valores recibidos (pueden ser secretos).
+        hide_input_in_errors=True,
     )
 
     # Aplicación

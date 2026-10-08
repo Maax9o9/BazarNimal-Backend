@@ -208,3 +208,18 @@ def test_render_like_production_config(tmp_path, monkeypatch):
     assert settings.docs_are_enabled is False
     with pytest.raises(ValueError, match="DB_SSL_CA no existe"):
         _settings(db_ssl_ca=str(tmp_path / "no-existe.pem"))
+
+
+def test_settings_errors_never_show_secret_values():
+    """Un error de configuración (por ejemplo, falta CORS_ORIGINS) no debe imprimir secretos en los logs."""
+    from pydantic import ValidationError
+
+    secret_password = "Secreta#Admin2026xyz"
+    kwargs = settings_kwargs(admin_password=secret_password)
+    kwargs.pop("cors_origins")
+    with pytest.raises(ValidationError) as error:
+        Settings(_env_file=None, **{**kwargs, "cors_origins": None})
+    message = str(error.value)
+    assert "cors_origins" in message
+    for secret in (secret_password, kwargs["jwt_secret"], kwargs["hmac_key"], kwargs["db_password"]):
+        assert secret not in message
